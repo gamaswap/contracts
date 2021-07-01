@@ -62,9 +62,19 @@ contract GMAPools is Ownable, ReentrancyGuard {
     uint256 public constant INIT_REWARD_PER_SEC = 22330000e18 / REDUCE_PERIOD * 10 / 11;
     uint256 public constant BONUS_PERIOD = 14 days;
     uint256 public constant BONUS_REWARD_PER_SEC = 7000000e18 / BONUS_PERIOD * 10 / 11;
-    uint256 public constant MAX_SINGLEPOOL_FEE = 1e17;
-    uint256 public singlePoolFee = 1e17;
-    bool public singlePoolFeeOn = true;
+    uint256 public constant MAX_FEE = 1e18;
+    uint256 public singleDepositFee = 1e17;
+    bool public singleDepositFeeOn = true;
+    uint256 public singleWithdrawFee = 1e17;
+    bool public singleWithdrawFeeOn = true;
+    uint256 public singleReleaseFee = 1e17;
+    bool public singleReleaseFeeOn = true;
+    uint256 public lpDepositFee = 0;
+    bool public lpDepositFeeOn = false;
+    uint256 public lpWithdrawFee = 1e17;
+    bool public lpWithdrawFeeOn = true;
+    uint256 public lpReleaseFee = 0;
+    bool public lpReleaseFeeOn = false;
     address payable public devaddr;
     address payable public feeAddr;
     mapping(address => uint256) public pidOfPool;
@@ -211,8 +221,11 @@ contract GMAPools is Ownable, ReentrancyGuard {
     
     function withdrawReleased(uint256 _pid) external payable nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        if (pool.poolType == POOL_TYPE.Single) {
-            require(msg.value == singlePoolFee, "GMAPools: Can't release to single pool without fee");
+        if (pool.poolType == POOL_TYPE.Single && singleReleaseFeeOn) {
+            require(msg.value == singleReleaseFee, "GMAPools: none release fee");
+            feeAddr.transfer(address(this).balance);
+        } else if (pool.poolType == POOL_TYPE.LP && lpReleaseFeeOn) {
+            require(msg.value == lpReleaseFee, "GMAPools: none release fee");
             feeAddr.transfer(address(this).balance);
         }
         address _user = msg.sender;
@@ -231,8 +244,11 @@ contract GMAPools is Ownable, ReentrancyGuard {
     
     function deposit(uint256 _pid, uint256 _amount) external payable nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        if (pool.poolType == POOL_TYPE.Single) {
-            require(msg.value == singlePoolFee, "GMAPools: Can't deposit to single pool without fee");
+        if (pool.poolType == POOL_TYPE.Single && singleDepositFeeOn) {
+            require(msg.value == singleDepositFee, "GMAPools: none deposit fee");
+            feeAddr.transfer(address(this).balance);
+        } else if (pool.poolType == POOL_TYPE.LP && lpDepositFeeOn) {
+            require(msg.value == lpDepositFee, "GMAPools: none deposit fee");
             feeAddr.transfer(address(this).balance);
         }
         address _user = msg.sender;
@@ -259,8 +275,11 @@ contract GMAPools is Ownable, ReentrancyGuard {
     
     function withdraw(uint256 _pid, uint256 _amount) external payable nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        if (pool.poolType == POOL_TYPE.Single && singlePoolFeeOn) {
-            require(msg.value == singlePoolFee, "GMAPools: Can't withdraw from single pool without fee");
+        if (pool.poolType == POOL_TYPE.Single && singleWithdrawFeeOn) {
+            require(msg.value == singleWithdrawFee, "GMAPools: none withdraw fee");
+            feeAddr.transfer(address(this).balance);
+        } else if (pool.poolType == POOL_TYPE.LP && lpWithdrawFeeOn) {
+            require(msg.value == lpWithdrawFee, "GMAPools: none withdraw fee");
             feeAddr.transfer(address(this).balance);
         }
         address _user = msg.sender;
@@ -287,8 +306,12 @@ contract GMAPools is Ownable, ReentrancyGuard {
     
     function emergencyWithdraw(uint256 _pid) external payable nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        if (pool.poolType == POOL_TYPE.Single && singlePoolFeeOn) {
-            require(msg.value == singlePoolFee, "GMAPools: Can't withdraw from single pool without fee");
+        if (pool.poolType == POOL_TYPE.Single && singleWithdrawFeeOn) {
+            require(msg.value == singleWithdrawFee, "GMAPools: none withdraw fee");
+            feeAddr.transfer(address(this).balance);
+        } else if (pool.poolType == POOL_TYPE.LP && lpWithdrawFeeOn) {
+            require(msg.value == lpWithdrawFee, "GMAPools: none withdraw fee");
+            feeAddr.transfer(address(this).balance);
         }
         address _user = msg.sender;
         UserInfo storage user = userInfo[_pid][_user];
@@ -386,10 +409,40 @@ contract GMAPools is Ownable, ReentrancyGuard {
         feeAddr = _feeAddr;
     }
     
-    function setSinglePoolFee(uint256 _fee) external onlyOwner {
-        require(_fee <= MAX_SINGLEPOOL_FEE, "GMAPools: max fee");
-        singlePoolFeeOn = (_fee != 0);
-        singlePoolFee = _fee;
+    function setSingleDepositFee(uint256 _fee) external onlyOwner {
+        require(_fee <= MAX_FEE, "GMAPools: max fee");
+        singleDepositFeeOn = (_fee != 0);
+        singleDepositFee = _fee;
+    }
+    
+    function setSingleWithdrawFee(uint256 _fee) external onlyOwner {
+        require(_fee <= MAX_FEE, "GMAPools: max fee");
+        singleWithdrawFeeOn = (_fee != 0);
+        singleWithdrawFee = _fee;
+    }
+    
+    function setSingleReleaseFee(uint256 _fee) external onlyOwner {
+        require(_fee <= MAX_FEE, "GMAPools: max fee");
+        singleReleaseFeeOn = (_fee != 0);
+        singleReleaseFee = _fee;
+    }
+    
+    function setLPDepositFee(uint256 _fee) external onlyOwner {
+        require(_fee <= MAX_FEE, "GMAPools: max fee");
+        lpDepositFeeOn = (_fee != 0);
+        lpDepositFee = _fee;
+    }
+    
+    function setLPWithdrawFee(uint256 _fee) external onlyOwner {
+        require(_fee <= MAX_FEE, "GMAPools: max fee");
+        lpWithdrawFeeOn = (_fee != 0);
+        lpWithdrawFee = _fee;
+    }
+    
+    function setLPReleaseFee(uint256 _fee) external onlyOwner {
+        require(_fee <= MAX_FEE, "GMAPools: max fee");
+        lpReleaseFeeOn = (_fee != 0);
+        lpReleaseFee = _fee;
     }
     
     function setSingleReleaseTime(uint256 _time) external onlyOwner {
