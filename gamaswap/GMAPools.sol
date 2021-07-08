@@ -79,6 +79,7 @@ contract GMAPools is Ownable, ReentrancyGuard {
     address payable public devaddr;
     address payable public feeAddr;
     mapping(address => uint256) public pidOfPool;
+    address public keeper;
     
     constructor(IGMA _GMA, address payable _devaddr, address payable _feeAddr, uint256 _startTime) public {
         require(_startTime > block.timestamp, "GMAPools: Incorrect start time");
@@ -87,6 +88,7 @@ contract GMAPools is Ownable, ReentrancyGuard {
         feeAddr = _feeAddr;
         startTime = _startTime;
         reduceStartTime = startTime + BONUS_PERIOD;
+        keeper = msg.sender;
     }
     
     function poolLength() external view returns (uint256) {
@@ -399,7 +401,8 @@ contract GMAPools is Ownable, ReentrancyGuard {
         }
     }
     
-    function setPoolShare(uint256 _single, uint256 _lp) external onlyOwner {
+    function setPoolShare(uint256 _single, uint256 _lp) external {
+        require(msg.sender == keeper, "GMAPools:keeper permit");
         require(_single.add(_lp) == 100, "GMAPools: the sum of two share should be 100");
         singleShare = _single;
         lpShare = _lp;
@@ -457,5 +460,9 @@ contract GMAPools is Ownable, ReentrancyGuard {
     function setLPReleaseTime(uint256 _time) external onlyOwner {
         require(_time > 0 && _time <= MAX_RELEASE_TIME, "GMAPools: invalid release time");
         lpReleaseTime = _time;
+    }
+    
+    function setKeeper(address _keeper) external onlyOwner {
+        keeper = _keeper;
     }
 }
