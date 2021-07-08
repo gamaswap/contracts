@@ -31,6 +31,7 @@ contract GMAPools is Ownable, ReentrancyGuard {
         uint256 pendingAmount;
         uint256 releasedAmount;
         uint256 lastReleaseTime;
+        uint256 tempReward;
     }
 
     struct PoolInfo {
@@ -149,10 +150,10 @@ contract GMAPools is Ownable, ReentrancyGuard {
                 uint256 poolsReward = getPoolsReward(pool.lastRewardTime, block.timestamp);
                 uint256 poolReward = _getPoolReward(poolsReward, pool.allocPoint, pool.poolType);
                 accRewardPerShare = accRewardPerShare.add(poolReward.mul(1e12).div(stakedTokenSupply));
-                return user.amount.mul(accRewardPerShare).div(1e12).sub(user.rewardDebt);
+                return user.amount.mul(accRewardPerShare).div(1e12).sub(user.rewardDebt).add(user.tempReward);
             }
             if (block.timestamp == pool.lastRewardTime) {
-                return user.amount.mul(accRewardPerShare).div(1e12).sub(user.rewardDebt);
+                return user.amount.mul(accRewardPerShare).div(1e12).sub(user.rewardDebt).add(user.tempReward);
             }
         }
         return 0;
@@ -236,9 +237,8 @@ contract GMAPools is Ownable, ReentrancyGuard {
         uint256 released = user.releasedAmount.add(newReleased);
         user.releasedAmount = 0;
         user.pendingAmount = user.pendingAmount.sub(newReleased);
-        if (released > 0) {
-            _safeRewardTransfer(_user, released);
-        }
+        require(released > 0, "GMAPools: no released reward");
+        _safeRewardTransfer(_user, released);
         emit WithdrawReleased(_user, _pid, released);
     }
     
@@ -257,7 +257,7 @@ contract GMAPools is Ownable, ReentrancyGuard {
         if (user.amount > 0) {
             uint256 pendingAmount = user.amount.mul(pool.accRewardPerShare).div(1e12).sub(user.rewardDebt);
             if (pendingAmount > 0) {
-                _pendingTransfer(user, pendingAmount, pool.poolType);
+                user.tempReward = user.tempReward.add(pendingAmount);
             }
         }
         if (_amount > 0) {
@@ -286,7 +286,7 @@ contract GMAPools is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][_user];
         require(user.amount >= _amount, "GMAPools: Insuffcient amount to withdraw");
         updatePool(_pid);
-        uint256 pendingAmount = user.amount.mul(pool.accRewardPerShare).div(1e12).sub(user.rewardDebt);
+        uint256 pendingAmount = user.amount.mul(pool.accRewardPerShare).div(1e12).sub(user.rewardDebt).add(user.tempReward);
         if (pendingAmount > 0) {
             require(isReleased(_pid, _user), "GMAPools: must wait until last released");
             _pendingTransfer(user, pendingAmount, pool.poolType);
@@ -318,6 +318,10 @@ contract GMAPools is Ownable, ReentrancyGuard {
         uint256 amount = user.amount;
         user.amount = 0;
         user.rewardDebt = 0;
+        user.pendingAmount = 0;
+        user.releasedAmount = 0;
+        user.lastReleaseTime = block.timestamp;
+        user.tempReward = 0;
         pool.stakedToken.safeTransfer(_user, amount);
         pool.totalAmount = pool.totalAmount.sub(amount);
         isStakedAddress[_pid][_user] = false;
