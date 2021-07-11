@@ -291,6 +291,7 @@ contract GMAPools is Ownable, ReentrancyGuard {
         uint256 pendingAmount = user.amount.mul(pool.accRewardPerShare).div(1e12).sub(user.rewardDebt).add(user.tempReward);
         if (pendingAmount > 0) {
             require(isReleased(_pid, _user), "GMAPools: must wait until last released");
+            user.tempReward = 0;
             _pendingTransfer(user, pendingAmount, pool.poolType);
         }
         if (_amount > 0) {
