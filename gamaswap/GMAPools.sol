@@ -9,6 +9,7 @@ import "../openzeppelin/contracts/utils/ReentrancyGuard.sol";
 interface IGMA is IERC20 {
     function mint(address to, uint256 amount) external returns (bool);
     function getMaxSupply() external pure returns(uint256);
+    function getMintInfo(address minter) external view returns (uint256 maxMint, uint256 nowMint);
 }
 
 contract GMAPools is Ownable, ReentrancyGuard {
@@ -60,9 +61,9 @@ contract GMAPools is Ownable, ReentrancyGuard {
     uint256 public constant MAX_RELEASE_TIME = 24 hours;
     uint256 public constant REDUCE_PERIOD = 365 days / 4;
     uint256 public constant RESERVE_PRECENTAGE = 89;
-    uint256 public constant INIT_REWARD_PER_SEC = 22330000e18 / REDUCE_PERIOD * 10 / 11;
+    // uint256 public constant INIT_REWARD_PER_SEC = 22330000e18 / REDUCE_PERIOD * 10 / 11;
     uint256 public constant BONUS_PERIOD = 14 days;
-    uint256 public constant BONUS_REWARD_PER_SEC = 7000000e18 / BONUS_PERIOD * 10 / 11;
+    // uint256 public constant BONUS_REWARD_PER_SEC = 7000000e18 / BONUS_PERIOD * 10 / 11;
     uint256 public constant MAX_FEE = 1e18;
     uint256 public singleDepositFee = 1e17;
     bool public singleDepositFeeOn = true;
@@ -103,11 +104,16 @@ contract GMAPools is Ownable, ReentrancyGuard {
     }
 
     function reward(uint256 _timestamp) public view returns (uint256) {
+        (uint256 maxMint,) = GMA.getMintInfo(address(this));
         if (_timestamp <= reduceStartTime) {
-            return BONUS_REWARD_PER_SEC;
+            // maxMint * 7000000e18 / 210000000e18 / BONUS_PERIOD * 10 / 11
+            return maxMint * 300 / 11 / BONUS_PERIOD;
+            // return BONUS_REWARD_PER_SEC;
         }
         uint256 _phase = phase(_timestamp);
-        uint256 periodReward = INIT_REWARD_PER_SEC;
+        // uint256 periodReward = INIT_REWARD_PER_SEC;
+        // maxMint * 22330000e18 / 210000000e18 / REDUCE_PERIOD * 10 / 11
+        uint256 periodReward = maxMint * 29 / 300 / REDUCE_PERIOD;
         for (uint256 i = 1; i < _phase; i++) {
             periodReward = periodReward.mul(RESERVE_PRECENTAGE).div(100);
         }
@@ -179,7 +185,8 @@ contract GMAPools is Ownable, ReentrancyGuard {
             return;
         }
         uint256 poolReward = _getPoolReward(poolsReward, pool.allocPoint, pool.poolType);
-        uint256 remaining = GMA.getMaxSupply().sub(GMA.totalSupply());
+        (uint256 maxMint, uint256 nowMint) = GMA.getMintInfo(address(this));
+        uint256 remaining = maxMint.sub(nowMint);
 
         if (remaining > 0) {
             if (poolReward.add(poolReward.div(10)) < remaining) {
