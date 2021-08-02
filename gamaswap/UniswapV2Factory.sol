@@ -51,7 +51,7 @@ pragma solidity =0.6.12;
 contract UniswapV2ERC20 {
     using SafeMathUniswap for uint;
 
-    string public constant name = 'Gama Swap LP Token';
+    string public constant name = 'GamaSwap LP Token';
     string public constant symbol = 'GMALP';
     uint8 public constant decimals = 18;
     uint  public totalSupply;
@@ -236,6 +236,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
     uint public price0CumulativeLast;
     uint public price1CumulativeLast;
     uint public kLast; // reserve0 * reserve1, as of immediately after the most recent liquidity event
+    mapping(uint256 => uint256) totalFeePerDay;
+    uint256 totalFee;
 
     uint private unlocked = 1;
     modifier lock() {
@@ -311,7 +313,12 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                         liquidity = totalSupply.mul(liquidity) / rootKLast;
                     }
                     
-                    if (liquidity > 0) _mint(feeTo, liquidity);
+                    if (liquidity > 0) {
+                        _mint(feeTo, liquidity);
+                        uint256 day = block.timestamp / 86400;
+                        totalFeePerDay[day] = totalFeePerDay[day].add(liquidity);
+                        totalFee = totalFee.add(liquidity);
+                    }
                 }
             }
         } else if (_kLast != 0) {

@@ -9,6 +9,7 @@ import "../openzeppelin/contracts//math/SafeMath.sol";
 
 abstract contract DelegateERC20 is ERC20 {
     mapping (address => address) internal _delegates;
+    uint256 public holders;
 
     struct Checkpoint {
         uint32 fromBlock;
@@ -22,12 +23,21 @@ abstract contract DelegateERC20 is ERC20 {
     mapping (address => uint) public nonces;
 
     function _mint(address account, uint256 amount) internal override virtual {
+        if(amount > 0 && balanceOf(account) == 0) {
+            holders = holders.add(1);
+        }
         super._mint(account, amount);
         _moveDelegates(address(0), _delegates[account], amount);
     }
 
     function _transfer(address sender, address recipient, uint256 amount) internal override virtual {
+        if(amount > 0 && balanceOf(recipient) == 0) {
+            holders = holders.add(1);
+        }
         super._transfer(sender, recipient, amount);
+        if(amount > 0 && balanceOf(sender) == 0) {
+            holders = holders.sub(1);
+        }
         _moveDelegates(_delegates[sender], _delegates[recipient], amount);
     }
 
@@ -146,6 +156,7 @@ contract GMA is DelegateERC20, Ownable {
     // using EnumerableSet for EnumerableSet.AddressSet;
     
     struct MintInfo {
+        bool inMap;
         bool isMinter;
         uint256 maxMint;
         uint256 nowMint;
@@ -156,7 +167,7 @@ contract GMA is DelegateERC20, Ownable {
     mapping(address => MintInfo) public mintInfo;
     uint256 private constant maxSupply = 210000000e18;
     uint256 public constant MAX_MINTER = 100;
-    constructor() public ERC20("Gama Swap Token", "GMA"){
+    constructor() public ERC20("GamaSwap Token", "GMA"){
     }
 
     function mint(address _to, uint256 _amount) external onlyMinter returns (bool) {
@@ -173,19 +184,21 @@ contract GMA is DelegateERC20, Ownable {
         return maxSupply;
     }
 
-    function updateMinter(address _minter, uint256 _maxMint) external onlyOwner returns (bool) {
+    function addOrUpdateMinter(address _minter, uint256 _maxMint) external onlyOwner returns (bool) {
         require(_minter != address(0), "GMA: minter is the zero address");
         MintInfo storage info = mintInfo[_minter];
         uint256 sumMint = 0;
         for (uint256 i = 0; i < minters.length; i++) {
-            sumMint = sumMint.add(mintInfo[minters[i]].maxMint);
+            uint256 mintbyaddress = _minter == minters[i] ? _maxMint : mintInfo[minters[i]].maxMint;
+            sumMint = sumMint.add(mintbyaddress);
         }
-        require(sumMint.add(_maxMint) <= maxSupply, "GMA: mint amount larger than maxSupply");
-        if (info.isMinter) {
+        require(sumMint <= maxSupply, "GMA: mint amount larger than maxSupply");
+        if (info.inMap) {
             require(_maxMint >= info.nowMint, "GMA: mint amount less than nowMint");
             info.maxMint = _maxMint;
         } else {
             require(minters.length < MAX_MINTER, "GMA: too many minter");
+            info.inMap = true;
             info.isMinter = true;
             info.maxMint = _maxMint;
             info.nowMint = 0;

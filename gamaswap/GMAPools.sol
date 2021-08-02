@@ -29,9 +29,11 @@ contract GMAPools is Ownable, ReentrancyGuard {
     struct UserInfo {
         uint256 amount;
         uint256 rewardDebt;
-        uint256 pendingAmount;
+        uint256 harvestAmount;
+        uint256 harvestTime;
         uint256 releasedAmount;
-        uint256 lastReleaseTime;
+        uint256 releasedTime;
+        uint256 leftAmount;
         uint256 tempReward;
     }
 
@@ -107,7 +109,7 @@ contract GMAPools is Ownable, ReentrancyGuard {
         (uint256 maxMint,) = GMA.getMintInfo(address(this));
         if (_timestamp <= reduceStartTime) {
             // maxMint * 7000000e18 / 210000000e18 / BONUS_PERIOD * 10 / 11
-            return maxMint * 300 / 11 / BONUS_PERIOD;
+            return maxMint / 33 / BONUS_PERIOD;
             // return BONUS_REWARD_PER_SEC;
         }
         uint256 _phase = phase(_timestamp);
@@ -213,20 +215,11 @@ contract GMAPools is Ownable, ReentrancyGuard {
         }
     }
     
-    function _pendingTransfer(UserInfo storage _user, uint256 _amount, POOL_TYPE _poolType) internal {
-        uint256 releaseTime = _poolType == POOL_TYPE.Single ? singleReleaseTime : lpReleaseTime;
-        uint256 newReleased = _user.pendingAmount.mul(block.timestamp.sub(_user.lastReleaseTime)).div(releaseTime);
-        newReleased = newReleased > _user.pendingAmount ? _user.pendingAmount : newReleased;
-        _user.releasedAmount = _user.releasedAmount.add(newReleased);
-        _user.pendingAmount = _user.pendingAmount.sub(newReleased).add(_amount);
-        _user.lastReleaseTime = block.timestamp;
-    }
-    
     function isReleased(uint256 _pid, address _user) public view returns (bool) {
         PoolInfo memory pool = poolInfo[_pid];
         UserInfo memory user = userInfo[_pid][_user];
         uint256 releaseTime = pool.poolType == POOL_TYPE.Single ? singleReleaseTime : lpReleaseTime;
-        return user.lastReleaseTime.add(releaseTime) <= block.timestamp;
+        return user.harvestTime.add(releaseTime) < block.timestamp;
     }
     
     function withdrawReleased(uint256 _pid) external payable nonReentrant {
@@ -241,14 +234,15 @@ contract GMAPools is Ownable, ReentrancyGuard {
         address _user = msg.sender;
         UserInfo storage user = userInfo[_pid][_user];
         uint256 releaseTime = pool.poolType == POOL_TYPE.Single ? singleReleaseTime : lpReleaseTime;
-        uint256 newReleased = user.pendingAmount.mul(block.timestamp.sub(user.lastReleaseTime)).div(releaseTime);
-        newReleased = newReleased > user.pendingAmount ? user.pendingAmount : newReleased;
-        uint256 released = user.releasedAmount.add(newReleased);
+        uint256 newRelease = user.harvestAmount.mul(block.timestamp.sub(user.releasedTime)).div(releaseTime);
+        newRelease = newRelease > user.leftAmount ? user.leftAmount : newRelease;
+        uint256 releaseAmount = user.releasedAmount.add(newRelease);
+        user.leftAmount = user.leftAmount.sub(newRelease);
         user.releasedAmount = 0;
-        user.pendingAmount = user.pendingAmount.sub(newReleased);
-        require(released > 0, "GMAPools: no released reward");
-        _safeRewardTransfer(_user, released);
-        emit WithdrawReleased(_user, _pid, released);
+        user.releasedTime = block.timestamp;
+        require(releaseAmount > 0, "GMAPools: no released reward");
+        _safeRewardTransfer(_user, releaseAmount);
+        emit WithdrawReleased(_user, _pid, releaseAmount);
     }
     
     function deposit(uint256 _pid, uint256 _amount) external payable nonReentrant {
@@ -299,7 +293,11 @@ contract GMAPools is Ownable, ReentrancyGuard {
         if (pendingAmount > 0) {
             require(isReleased(_pid, _user), "GMAPools: must wait until last released");
             user.tempReward = 0;
-            _pendingTransfer(user, pendingAmount, pool.poolType);
+            user.harvestAmount = _amount;
+            user.releasedAmount = user.releasedAmount.add(user.leftAmount);
+            user.leftAmount = _amount;
+            user.harvestTime = block.timestamp;
+            user.releasedTime = block.timestamp;
         }
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
@@ -328,9 +326,11 @@ contract GMAPools is Ownable, ReentrancyGuard {
         uint256 amount = user.amount;
         user.amount = 0;
         user.rewardDebt = 0;
-        user.pendingAmount = 0;
+        user.harvestAmount = 0;
+        user.harvestTime = 0;
+        user.leftAmount = 0;
         user.releasedAmount = 0;
-        user.lastReleaseTime = block.timestamp;
+        user.releasedTime = 0;
         user.tempReward = 0;
         pool.stakedToken.safeTransfer(_user, amount);
         pool.totalAmount = pool.totalAmount.sub(amount);
@@ -347,6 +347,8 @@ contract GMAPools is Ownable, ReentrancyGuard {
     }
     
     function addPool(POOL_TYPE _poolType, uint256 _allocPoint, IERC20 _stakedToken, bool _withUpdate) public  onlyOwner {
+        require(address(_stakedToken) != address(0), "GMAPools: zero pool address");
+        require(poolInfo.length == 0 || (pidOfPool[address(_stakedToken)] == 0 && poolInfo[0].stakedToken != _stakedToken), "GMAPools: pool added");
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -370,6 +372,7 @@ contract GMAPools is Ownable, ReentrancyGuard {
     }
     
     function setPool(uint256 _pid, uint256 _allocPoint, bool _withUpdate) public onlyOwner {
+        require(_pid < poolInfo.length, "GMAPools: pool not exist");
         if (_withUpdate) {
             massUpdatePools();
         }
