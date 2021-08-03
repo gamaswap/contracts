@@ -293,9 +293,9 @@ contract GMAPools is Ownable, ReentrancyGuard {
         if (pendingAmount > 0) {
             require(isReleased(_pid, _user), "GMAPools: must wait until last released");
             user.tempReward = 0;
-            user.harvestAmount = _amount;
+            user.harvestAmount = pendingAmount;
             user.releasedAmount = user.releasedAmount.add(user.leftAmount);
-            user.leftAmount = _amount;
+            user.leftAmount = pendingAmount;
             user.harvestTime = block.timestamp;
             user.releasedTime = block.timestamp;
         }
